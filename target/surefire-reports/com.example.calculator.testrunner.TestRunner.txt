@@ -1,0 +1,16 @@
+-------------------------------------------------------------------------------
+Test set: com.example.calculator.testrunner.TestRunner
+-------------------------------------------------------------------------------
+Tests run: 6, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 13.04 s <<< FAILURE! -- in com.example.calculator.testrunner.TestRunner
+Calculator unit operations.Perform basic math #1 -- Time elapsed: 2.072 s <<< FAILURE!
+java.lang.AssertionError: 
+[Verify calculator result equals expected] 
+Expecting actual:
+  6.0
+to be close to:
+  5.0
+by less than 0.001 but difference was 1.0.
+(a difference of exactly 0.001 being considered valid)
+	at com.example.calculator.stepdefinitions.UnitSteps.verify(UnitSteps.java:47)
+	at ✽.the result should be 5(file:///C:/Users/JunnelLMiguel/eclipse-workspace/calculator-test-demo/src/test/resources/features/unit_test.feature:6)
+

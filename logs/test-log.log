@@ -1,0 +1,28 @@
+2025-10-17 08:53:22 [main] INFO  com.example.calculator.hooks.Hooks - Starting scenario: Site returns HTTP 200 on GET /
+2025-10-17 08:53:24 [main] INFO  com.example.calculator.hooks.Hooks - Closing the browser.
+2025-10-17 08:53:25 [main] INFO  com.example.calculator.hooks.Hooks - Starting scenario: Calculator elements should be visible
+2025-10-17 08:53:25 [main] INFO  com.example.calculator.hooks.Hooks - Closing the browser.
+2025-10-17 08:53:26 [main] INFO  com.example.calculator.hooks.Hooks - Starting scenario: Perform basic math
+2025-10-17 08:53:27 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='a'] - Text: 2.0
+2025-10-17 08:53:27 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='b'] - Text: 3.0
+2025-10-17 08:53:27 [main] INFO  com.example.calculator.utils.ElementActionUtils - Select in the dropdown: By.xpath: //select[@id='op'] - Text: add
+2025-10-17 08:53:27 [main] INFO  com.example.calculator.utils.ElementActionUtils - Clicked on element: By.xpath: //button[@id='compute']
+2025-10-17 08:53:28 [main] INFO  com.example.calculator.hooks.Hooks - Closing the browser.
+2025-10-17 08:53:28 [main] INFO  com.example.calculator.hooks.Hooks - Starting scenario: Perform basic math
+2025-10-17 08:53:29 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='a'] - Text: 10.0
+2025-10-17 08:53:29 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='b'] - Text: 4.0
+2025-10-17 08:53:29 [main] INFO  com.example.calculator.utils.ElementActionUtils - Select in the dropdown: By.xpath: //select[@id='op'] - Text: sub
+2025-10-17 08:53:29 [main] INFO  com.example.calculator.utils.ElementActionUtils - Clicked on element: By.xpath: //button[@id='compute']
+2025-10-17 08:53:29 [main] INFO  com.example.calculator.hooks.Hooks - Closing the browser.
+2025-10-17 08:53:30 [main] INFO  com.example.calculator.hooks.Hooks - Starting scenario: Perform basic math
+2025-10-17 08:53:31 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='a'] - Text: 7.0
+2025-10-17 08:53:31 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='b'] - Text: 6.0
+2025-10-17 08:53:31 [main] INFO  com.example.calculator.utils.ElementActionUtils - Select in the dropdown: By.xpath: //select[@id='op'] - Text: mul
+2025-10-17 08:53:31 [main] INFO  com.example.calculator.utils.ElementActionUtils - Clicked on element: By.xpath: //button[@id='compute']
+2025-10-17 08:53:31 [main] INFO  com.example.calculator.hooks.Hooks - Closing the browser.
+2025-10-17 08:53:32 [main] INFO  com.example.calculator.hooks.Hooks - Starting scenario: Perform basic math
+2025-10-17 08:53:33 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='a'] - Text: 10.0
+2025-10-17 08:53:33 [main] INFO  com.example.calculator.utils.ElementActionUtils - Entered text in element: By.xpath: //input[@id='b'] - Text: 5.0
+2025-10-17 08:53:33 [main] INFO  com.example.calculator.utils.ElementActionUtils - Select in the dropdown: By.xpath: //select[@id='op'] - Text: div
+2025-10-17 08:53:33 [main] INFO  com.example.calculator.utils.ElementActionUtils - Clicked on element: By.xpath: //button[@id='compute']
+2025-10-17 08:53:33 [main] INFO  com.example.calculator.hooks.Hooks - Closing the browser.
