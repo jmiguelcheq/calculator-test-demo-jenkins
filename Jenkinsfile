@@ -1,63 +1,43 @@
-/**
- * Jenkinsfile — Testing Repo (tests runner)
- * Runs UI/API tests, publishes JUnit (and optional Allure), returns pass/fail to the caller.
- *
- * Requirements:
- *  - Maven
- *  - If using Allure: Allure Jenkins plugin; tests must produce target/allure-results
- */
-
 pipeline {
-  agent any
-  options { timestamps(); disableConcurrentBuilds() }
-
-  parameters {
-    string(name: 'UPSTREAM_BUILD_URL', defaultValue: '', description: 'Link to upstream App build (for traceability)')
-    string(name: 'UPSTREAM_REPO',      defaultValue: '', description: 'Upstream repo name')
-    string(name: 'UPSTREAM_SHA',       defaultValue: '', description: 'Upstream commit SHA')
+  agent {
+    docker {
+      image 'maven:3.9-eclipse-temurin-21'
+      args '-v $JENKINS_HOME/.m2:/root/.m2'
+    }
   }
-
-  environment {
-    // Put any env vars needed by your tests here, e.g. BASE_URL, BROWSER, etc.
+  options {
+    timestamps()
+    durabilityHint('PERFORMANCE_OPTIMIZED')
   }
-
+  triggers { /* multibranch handles webhooks; keep empty */ }
   stages {
-    stage('Checkout Tests') {
+    stage('Checkout') {
       steps { checkout scm }
     }
-
-    stage('Prepare Dependencies') {
+    stage('Build & Test') {
       steps {
-        script {
-          // If you need drivers/browsers/npm, install/configure here.
-          echo "Preparing dependencies..."
-        }
-      }
-    }
-
-    stage('Run Tests') {
-      steps {
-        script {
-          // Adjust to your stack; this assumes Maven
-          if (isUnix()) {
-            sh 'mvn -q -DskipTests=false test'
-          } else {
-            bat 'mvn -q -DskipTests=false test'
-          }
-        }
+        sh 'mvn -B -q clean test'
       }
       post {
         always {
-          junit '**/target/surefire-reports/*.xml'
-          // If using Allure and results exist, uncomment:
-          // allure includeProperties: false, results: [[path: 'target/allure-results']]
+          // Publish JUnit
+          junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
+          // Publish Allure (if you have Allure plugin)
+          script {
+            def hasAllure = fileExists('target/allure-results') || sh(script: 'ls -d **/allure-results 2>/dev/null | head -n1', returnStatus: true) == 0
+            if (hasAllure) {
+              // Try top-level first, else first match
+              if (fileExists('target/allure-results')) {
+                allure includeProperties: false, jdk: '', results: [[path: 'target/allure-results']]
+              } else {
+                def rel = sh(script: 'ls -d **/allure-results | head -n1', returnStdout: true).trim()
+                allure includeProperties: false, jdk: '', results: [[path: rel]]
+              }
+            }
+          }
+          archiveArtifacts artifacts: 'target/**, **/target/**', allowEmptyArchive: true
         }
       }
     }
-  }
-
-  post {
-    success { echo "Tests PASSED. Upstream: ${params.UPSTREAM_REPO} @ ${params.UPSTREAM_SHA}" }
-    failure { echo "Tests FAILED. Upstream: ${params.UPSTREAM_REPO} @ ${params.UPSTREAM_SHA}" }
   }
 }
