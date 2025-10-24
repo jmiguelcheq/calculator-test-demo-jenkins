@@ -145,12 +145,9 @@ pipeline {
   options { timestamps(); durabilityHint('PERFORMANCE_OPTIMIZED') }
 
   parameters {
-    string(name: 'APP_REPO', defaultValue: 'jmiguelcheq/calculator-demo-jenkins',
-           description: 'GitHub app repo to pull if testing a specific SHA (LOCAL mode).')
-    string(name: 'APP_SHA', defaultValue: '',
-           description: 'When set, we clone app repo at this SHA and serve locally on :8080.')
-    string(name: 'CALC_URL', defaultValue: 'https://jmiguelcheq.github.io/calculator-demo',
-           description: 'Public URL to test when APP_SHA is empty (REMOTE mode).')
+    string(name: 'APP_REPO', defaultValue: 'jmiguelcheq/calculator-demo-jenkins', description: 'GitHub app repo to pull if testing a specific SHA (LOCAL mode).')
+    string(name: 'APP_SHA', defaultValue: '', description: 'When set, we clone app repo at this SHA and serve locally on :8080.')
+    string(name: 'CALC_URL', defaultValue: 'https://jmiguelcheq.github.io/calculator-demo', description: 'Public URL to test when APP_SHA is empty (REMOTE mode).')
     booleanParam(name: 'HEADLESS', defaultValue: true, description: 'Run browser headless')
   }
 
