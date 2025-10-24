@@ -163,57 +163,66 @@ pipeline {
       steps { checkout scm }
     }
 
-    stage('Resolve Test Target') {
-      steps {
-        script {
-          if (params.APP_SHA?.trim()) {
-            echo "LOCAL mode: cloning ${params.APP_REPO} @ ${params.APP_SHA}"
-            withEnv(["APP_REPO=${params.APP_REPO}", "APP_SHA=${params.APP_SHA}"]) {
-              sh '''
-                set -e
-                rm -rf app && mkdir -p app
-                git clone "https://github.com/$APP_REPO.git" app
-                cd app
-                git fetch --all --tags
-                git checkout "$APP_SHA"
-              '''
-              sh '''
-                set -e
-                # serve static app from app/src on :8080
-                cd app/src
-                if ! command -v http-server >/dev/null 2>&1; then npm i -g http-server >/dev/null 2>&1; fi
-                nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
-                echo $! > /tmp/http-server.pid
-                for i in $(seq 1 30); do
-                  curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1
-                done
-              '''
-            }
-            env.BASE_URL = 'http://127.0.0.1:8080'
-          } else {
-            echo "REMOTE mode: using CALC_URL=${params.CALC_URL}"
-            env.BASE_URL = "${params.CALC_URL?.trim() ?: ''}"
+  stage('Resolve Test Target') {
+    steps {
+      script {
+        // Decide LOCAL vs REMOTE and compute a plain Groovy string
+        def baseUrl
+        if (params.APP_SHA?.trim()) {
+          echo "LOCAL mode: cloning ${params.APP_REPO} @ ${params.APP_SHA}"
+          withEnv(["APP_REPO=${params.APP_REPO}", "APP_SHA=${params.APP_SHA}"]) {
+            sh '''
+              set -e
+              rm -rf app && mkdir -p app
+              git clone "https://github.com/$APP_REPO.git" app
+              cd app
+              git fetch --all --tags
+              git checkout "$APP_SHA"
+
+              # serve static app from app/src on :8080
+              cd src
+              if ! command -v http-server >/dev/null 2>&1; then npm i -g http-server >/dev/null 2>&1; fi
+              nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
+              echo $! > /tmp/http-server.pid
+              for i in $(seq 1 30); do
+                curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1
+              done
+            '''
           }
-          echo "Resolved BASE_URL=${env.BASE_URL}"
-          if (!env.BASE_URL?.trim()) {
-            error "BASE_URL is empty. Check CALC_URL parameter or LOCAL server."
-          }
+          baseUrl = 'http://127.0.0.1:8080'
+        } else {
+          echo "REMOTE mode: using CALC_URL=${params.CALC_URL}"
+          baseUrl = (params.CALC_URL ?: '').trim()
         }
+
+        echo "Resolved BASE_URL(computed) = ${baseUrl}"
+        if (!baseUrl) {
+          error "BASE_URL is empty. Check CALC_URL parameter or LOCAL server."
+        }
+
+        // Set once for any later shell steps that read $BASE_URL
+        env.BASE_URL = baseUrl
       }
     }
+  }
 
     stage('Build & Run Tests') {
       steps {
-        sh """
-          set -e
-          mvn -B clean test \
-            -DbaseUrl="${env.BASE_URL}" \
-            -Dheadless="${params.HEADLESS}"
-        """
+        // Pass values explicitly to the shell via environment
+        withEnv(["BASE_URL=${env.BASE_URL}", "HEADLESS=${params.HEADLESS}"]) {
+          sh '''
+            set -e
+            echo "Using BASE_URL=$BASE_URL HEADLESS=$HEADLESS"
+            mvn -B clean test \
+              -DbaseUrl="$BASE_URL" \
+              -Dheadless="$HEADLESS"
+          '''
+        }
       }
       post {
         always {
           junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
+
           sh '''
             set +e
             if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
@@ -225,15 +234,17 @@ pipeline {
               echo "No allure-results found; skipping single-file generation."
             fi
           '''
+
           script {
             def hasAllure = fileExists('target/allure-results') ||
                             sh(script: 'ls -d **/allure-results 2>/dev/null | head -n1', returnStatus: true) == 0
             if (hasAllure) {
               def path = fileExists('target/allure-results') ? 'target/allure-results'
-                                                             : sh(script: 'ls -d **/allure-results | head -n1', returnStdout: true).trim()
+                                                            : sh(script: 'ls -d **/allure-results | head -n1', returnStdout: true).trim()
               allure includeProperties: false, jdk: '', results: [[path: path]]
             }
           }
+
           archiveArtifacts artifacts: '''
             **/target/surefire-reports/**,
             **/target/cucumber-reports/**,
