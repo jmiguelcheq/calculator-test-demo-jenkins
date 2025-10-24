@@ -1,6 +1,6 @@
 @UNIT
 Feature: Calculator unit operations
-  Scenario Outline: Perform basic math
+  Scenario Outline: Perform basic math: (<op>)
     Given two numbers <a> and <b>
     When I <op> them
     Then the result should be <expected>

@@ -47,7 +47,6 @@ public class ElementActionUtils {
 	public void clickElement(By locator) {
 		try {
 			WebElement element = waitUtil.waitForElementClickable(locator, clickabilityTimeout);
-			highlightElement(driver, element);
 			element.click();
 			logger.info("Clicked on element: " + locator.toString());		
 		} catch (Exception e ) {
@@ -59,7 +58,6 @@ public class ElementActionUtils {
 	public void clickElementByFluentWait(By locator) {
 		try {
 			WebElement element = waitUtil.fluentWait(locator, fluentTimeout, pollingTime);
-			highlightElement(driver, element);
 			element.click();
 			logger.info("Clicked on element (using FluentWait): " + locator.toString());
 		} catch (Exception e ) {
@@ -78,7 +76,6 @@ public class ElementActionUtils {
 	public void inputElement(By locator, String text) {
 		try {
 			WebElement element = waitUtil.waitForElementVisible(locator, visibilityTimeout);
-			highlightElement(driver, element);
 			element.clear();
 			element.sendKeys(text);
 			logger.info("Entered text in element: " + locator.toString() + " - Text: " + text);
@@ -91,7 +88,6 @@ public class ElementActionUtils {
 	public void selectDropdown(By locator, String text) {
 		try {
 			WebElement element = waitUtil.waitForElementVisible(locator, visibilityTimeout);
-			highlightElement(driver, element);
 			
 		    Select select = new Select(element);
 		    select.selectByValue(text);
@@ -111,7 +107,6 @@ public class ElementActionUtils {
 	public void verifyDisplayed(By locator) {
 		try {
 			WebElement element = waitUtil.waitForElementVisible(locator, visibilityTimeout);
-			highlightElement(driver, element);
 			element.isDisplayed();
 			logger.info("Element is displayed: " + locator.toString());
 		} catch (Exception e) {
@@ -139,7 +134,6 @@ public class ElementActionUtils {
 	public void getTextAndCompare(By locator, String expectedText) {
 		try {
 			WebElement element = waitUtil.waitForElementVisible(locator, visibilityTimeout);
-			highlightElement(driver, element);
 			
 			// compare expected and actual text
 			if (element.getText().equals(expectedText)) {
@@ -178,23 +172,5 @@ public class ElementActionUtils {
         	logger.error("Unable to get attribute '" + attribute + "' from element: " + locator.toString() + ". Reason: " + e.getMessage());
         	throw e;
         }
-    }
-	
-    /**
-     * Highlights the given element by applying a blue border using JavaScript.
-     * Helpful for debugging during test execution.
-     *
-     * @param driver the WebDriver instance
-     * @param locator the WebElement to be highlighted
-     */
-    private static void highlightElement(WebDriver driver, WebElement locator) {
-        try {
-            ((org.openqa.selenium.JavascriptExecutor) driver).executeScript(
-            		"arguments[0].style.border='2px solid yellow'; arguments[0].style.backgroundColor='yellow';", locator);
-        } catch (Exception e) {
-			logger.error("Failed to get text or compare: " + locator.toString());
-			throw e;
-        }
-    }
-	
+    }	
 }

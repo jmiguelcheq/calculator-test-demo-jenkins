@@ -27,12 +27,13 @@ public class UnitSteps {
     public void nums(double a, double b) {
         this.a = a;
         this.b = b;
+        
+    	landingPage.inputNumberOne(String.valueOf(a));
+    	landingPage.inputNumberTwo(String.valueOf(b));
     }
 
     @When("I {word} them")
     public void performOperation(String operation) {
-    	landingPage.inputNumberOne(String.valueOf(a));
-    	landingPage.inputNumberTwo(String.valueOf(b));
     	landingPage.selectOperation(operation);
     	landingPage.clickCompute();
     }
