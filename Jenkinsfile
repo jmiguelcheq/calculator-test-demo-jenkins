@@ -207,18 +207,19 @@ pipeline {
   }
 
     stage('Build & Run Tests') {
-      steps {
-        // Pass values explicitly to the shell via environment
-        withEnv(["BASE_URL=${env.BASE_URL}", "HEADLESS=${params.HEADLESS}"]) {
-          sh '''
-            set -e
-            echo "Using BASE_URL=$BASE_URL HEADLESS=$HEADLESS"
-            mvn -B clean test \
-              -DbaseUrl="$BASE_URL" \
-              -Dheadless="$HEADLESS"
-          '''
-        }
-      }
+	  steps {
+	    withEnv(["BASE_URL=${env.BASE_URL}", "HEADLESS=${params.HEADLESS}"]) {
+	      sh '''
+	        set -e
+	        echo "Using BASE_URL=$BASE_URL HEADLESS=$HEADLESS"
+	        mvn -B clean test \
+	          -DbaseUrl="$BASE_URL" \
+	          -DBASE_URL="$BASE_URL" \
+	          -Dapp.baseUrl="$BASE_URL" \
+	          -Dheadless="$HEADLESS"
+	      '''
+	    }
+	  }
       post {
         always {
           junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
