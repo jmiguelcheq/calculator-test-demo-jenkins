@@ -203,55 +203,51 @@ pipeline {
     }
   }
 
-    stage('Build & Run Tests') {
+	stage('Build & Run Tests') {
 	  steps {
-	    withEnv(["BASE_URL=${env.BASE_URL}", "HEADLESS=${params.HEADLESS}"]) {
-	      sh '''
-	        set -e
-	        echo "Using BASE_URL=$BASE_URL HEADLESS=$HEADLESS"
-	        mvn -B clean test \
-	          -DbaseUrl="$BASE_URL" \
-	          -DBASE_URL="$BASE_URL" \
-	          -Dapp.baseUrl="$BASE_URL" \
-	          -Dheadless="$HEADLESS"
-	      '''
+	    script {
+	      // Make sure BASE_URL is set (from LOCAL or REMOTE mode earlier)
+	      def resolved = env.BASE_URL?.trim()
+	      if (!resolved) {
+	        error "BASE_URL is empty. Check CALC_URL or LOCAL server setup."
+	      }
+	
+	      withEnv(["BASE_URL=${resolved}", "HEADLESS=${params.HEADLESS}"]) {
+	        sh '''
+	          set -e
+	          echo "Using BASE_URL=$BASE_URL HEADLESS=$HEADLESS"
+	          mvn -B clean test \
+	            -DbaseUrl="$BASE_URL" \
+	            -Dheadless="$HEADLESS"
+	        '''
+	      }
 	    }
 	  }
-      post {
-        always {
-          junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
-
-          sh '''
-            set +e
-            if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
-              PATH_TO_RESULTS="target/allure-results"
-              [ -d "$PATH_TO_RESULTS" ] || PATH_TO_RESULTS="$(ls -d **/allure-results | head -n1)"
-              echo "Generating Allure single-file from: $PATH_TO_RESULTS"
-              allure generate "$PATH_TO_RESULTS" --single-file --clean -o target/allure-single || true
-            else
-              echo "No allure-results found; skipping single-file generation."
-            fi
-          '''
-
-          script {
-            def hasAllure = fileExists('target/allure-results') ||
-                            sh(script: 'ls -d **/allure-results 2>/dev/null | head -n1', returnStatus: true) == 0
-            if (hasAllure) {
-              def path = fileExists('target/allure-results') ? 'target/allure-results'
-                                                            : sh(script: 'ls -d **/allure-results | head -n1', returnStdout: true).trim()
-              allure includeProperties: false, jdk: '', results: [[path: path]]
-            }
-          }
-
-          archiveArtifacts artifacts: '''
-            **/target/surefire-reports/**,
-            **/target/cucumber-reports/**,
-            target/allure-single/**,
-            **/target/allure-results/**
-          '''.trim(), allowEmptyArchive: true
-        }
-      }
-    }
+	  post {
+	    always {
+	      junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
+	
+	      // Generate the single-file Allure report with the CLI that’s inside the container
+	      sh '''
+	        set +e
+	        if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
+	          PATH_TO_RESULTS="target/allure-results"
+	          [ -d "$PATH_TO_RESULTS" ] || PATH_TO_RESULTS="$(ls -d **/allure-results | head -n1)"
+	          echo "Generating Allure single-file from: $PATH_TO_RESULTS"
+	          allure generate "$PATH_TO_RESULTS" --single-file --clean -o target/allure-single || true
+	        else
+	          echo "No allure-results found; skipping single-file generation."
+	        fi
+	      '''
+	      archiveArtifacts artifacts: '''
+	        **/target/surefire-reports/**,
+	        **/target/cucumber-reports/**,
+	        target/allure-single/**,
+	        **/target/allure-results/**
+	      '''.trim(), allowEmptyArchive: true
+	    }
+	  }
+	}
   }
 
   post {
