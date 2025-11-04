@@ -9,13 +9,12 @@ pipeline {
 
   options { timestamps(); durabilityHint('PERFORMANCE_OPTIMIZED') }
 
-  // 👇 All default values moved here (no more user input)
   environment {
     APP_REPO = 'jmiguelcheq/calculator-demo-jenkins'
-    APP_SHA  = ''   // Leave empty to use REMOTE mode
+    APP_SHA  = ''
     CALC_URL = 'https://jmiguelcheq.github.io/calculator-demo-jenkins'
     HEADLESS = 'true'
-    BASE_URL = ''   // Will be computed
+    BASE_URL = ''
   }
 
   stages {
@@ -109,15 +108,14 @@ pipeline {
             **/target/allure-results/**
           '''.trim(), allowEmptyArchive: true
 
-          // Optional: Uncomment if you want HTML report in Jenkins UI
-          // publishHTML(target: [
-          //   reportDir: 'target/allure-single',
-          //   reportFiles: 'index.html',
-          //   reportName: 'Allure Report',
-          //   keepAll: true,
-          //   allowMissing: true,
-          //   alwaysLinkToLastBuild: true
-          // ])
+           publishHTML(target: [
+             reportDir: 'target/allure-single',
+             reportFiles: 'index.html',
+             reportName: 'Allure Report',
+             keepAll: true,
+             allowMissing: true,
+             alwaysLinkToLastBuild: true
+          ])
         }
       }
     }
