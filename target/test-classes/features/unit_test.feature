@@ -6,7 +6,7 @@ Feature: Calculator unit operations
     Then the result should be <expected>
     Examples:
       | a  | b  | op       | expected |
-      | 2  | 3  | add      | 2        |
+      | 2  | 3  | add      | 5        |
       | 10 | 4  | subtract | 6        |
-      | 7  | 6  | multiply | 43       |
-      | 10 | 5  | divide   | 3        |
+      | 7  | 6  | multiply | 42       |
+      | 10 | 5  | divide   | 2        |
