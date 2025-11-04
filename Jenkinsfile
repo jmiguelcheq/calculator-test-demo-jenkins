@@ -102,9 +102,6 @@ pipeline {
 
           // 🎯 Archive only the single HTML file
           archiveArtifacts artifacts: 'allure-report.html', allowEmptyArchive: true
-
-          // Keep Allure plugin link in the sidebar
-          allure(includeProperties: false, jdk: '', results: [[path: 'target/allure-results']])
         }
       }
     }
