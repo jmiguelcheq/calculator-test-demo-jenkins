@@ -26,10 +26,8 @@ pipeline {
       steps {
         script {
           def baseUrl
-
           if (env.APP_SHA?.trim()) {
             echo "LOCAL mode: cloning ${env.APP_REPO} @ ${env.APP_SHA}"
-
             sh '''
               set -e
               rm -rf app && mkdir -p app
@@ -44,7 +42,6 @@ pipeline {
               nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
               echo $! > /tmp/http-server.pid
 
-              # Wait for local server to start
               for i in $(seq 1 30); do
                 curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1
               done
@@ -58,7 +55,6 @@ pipeline {
           echo "Resolved BASE_URL = ${baseUrl}"
           if (!baseUrl) { error "BASE_URL is empty. Check CALC_URL or LOCAL app server." }
 
-          // Persist for next stage
           writeFile file: 'BASE_URL.txt', text: baseUrl
           currentBuild.description = "BASE_URL=${baseUrl}"
         }
@@ -85,37 +81,30 @@ pipeline {
 
       post {
         always {
-          junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
+          // JUnit for "Tests" tab
+          junit allowEmptyResults: true,
+                testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Generate Allure single-file report
+          // Generate Allure single-file and copy to a single artifact
           sh '''
             set +e
             if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
               PATH_TO_RESULTS="target/allure-results"
               [ -d "$PATH_TO_RESULTS" ] || PATH_TO_RESULTS="$(ls -d **/allure-results | head -n1)"
-              echo "Generating Allure single-file report from: $PATH_TO_RESULTS"
+              echo "Generating Allure single-file from: $PATH_TO_RESULTS"
               allure generate "$PATH_TO_RESULTS" --single-file --clean -o target/allure-single || true
+              # Copy single HTML to root so Build Artifacts shows just one file
+              cp -f target/allure-single/index.html allure-report.html || true
             else
-              echo "No allure-results found; skipping report generation."
+              echo "No allure-results found; skipping Allure generation."
             fi
           '''
 
-          // Archive artifacts (JUnit + Allure reports)
-          archiveArtifacts artifacts: '''
-            **/target/surefire-reports/**,
-            **/target/cucumber-reports/**,
-            target/allure-single/**,
-            **/target/allure-results/**
-          '''.trim(), allowEmptyArchive: true
+          // 🎯 Archive only the single HTML file
+          archiveArtifacts artifacts: 'allure-report.html', allowEmptyArchive: true
 
-           publishHTML(target: [
-             reportDir: 'target/allure-single',
-             reportFiles: 'index.html',
-             reportName: 'Allure Report',
-             keepAll: true,
-             allowMissing: true,
-             alwaysLinkToLastBuild: true
-          ])
+          // Keep Allure plugin link in the sidebar
+          allure(includeProperties: false, jdk: '', results: [[path: 'target/allure-results']])
         }
       }
     }
@@ -123,7 +112,6 @@ pipeline {
 
   post {
     always {
-      // Stop local server if running
       sh '''
         if [ -f /tmp/http-server.pid ]; then
           kill "$(cat /tmp/http-server.pid)" 2>/dev/null || true
