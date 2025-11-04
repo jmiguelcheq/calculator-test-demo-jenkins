@@ -81,11 +81,11 @@ pipeline {
 
       post {
         always {
-          // JUnit for "Tests" tab
+          // Tests tab
           junit allowEmptyResults: true,
                 testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Generate Allure single-file and copy to a single artifact
+          // Create Allure single-file and place the HTML at workspace root
           sh '''
             set +e
             if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
@@ -93,15 +93,24 @@ pipeline {
               [ -d "$PATH_TO_RESULTS" ] || PATH_TO_RESULTS="$(ls -d **/allure-results | head -n1)"
               echo "Generating Allure single-file from: $PATH_TO_RESULTS"
               allure generate "$PATH_TO_RESULTS" --single-file --clean -o target/allure-single || true
-              # Copy single HTML to root so Build Artifacts shows just one file
               cp -f target/allure-single/index.html allure-report.html || true
             else
               echo "No allure-results found; skipping Allure generation."
             fi
           '''
 
-          // 🎯 Archive only the single HTML file
+          // ✅ Build Artifacts: only the single HTML
           archiveArtifacts artifacts: 'allure-report.html', allowEmptyArchive: true
+
+          // ✅ HTML Publisher: renders the same file inside Jenkins
+          publishHTML(target: [
+            reportDir: '.',                  // file is at workspace root
+            reportFiles: 'allure-report.html',
+            reportName: 'Allure Report',
+            keepAll: true,
+            allowMissing: true,
+            alwaysLinkToLastBuild: true
+          ])
         }
       }
     }
