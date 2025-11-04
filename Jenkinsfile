@@ -41,7 +41,6 @@ pipeline {
               if ! command -v http-server >/dev/null 2>&1; then npm i -g http-server >/dev/null 2>&1; fi
               nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
               echo $! > /tmp/http-server.pid
-
               for i in $(seq 1 30); do
                 curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1
               done
@@ -85,32 +84,25 @@ pipeline {
           junit allowEmptyResults: true,
                 testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Create Allure single-file and place the HTML at workspace root
+          // Generate Allure single-file and store under target/
           sh '''
             set +e
+            mkdir -p target
             if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
               PATH_TO_RESULTS="target/allure-results"
               [ -d "$PATH_TO_RESULTS" ] || PATH_TO_RESULTS="$(ls -d **/allure-results | head -n1)"
               echo "Generating Allure single-file from: $PATH_TO_RESULTS"
               allure generate "$PATH_TO_RESULTS" --single-file --clean -o target/allure-single || true
-              cp -f target/allure-single/index.html allure-report.html || true
+              cp -f target/allure-single/index.html target/allure-report.html || true
+              (cd target && zip -q -9 allure-report.zip allure-report.html) || true
             else
               echo "No allure-results found; skipping Allure generation."
             fi
           '''
 
-          // ✅ Build Artifacts: only the single HTML
-          archiveArtifacts artifacts: 'allure-report.html', allowEmptyArchive: true
-
-          // ✅ HTML Publisher: renders the same file inside Jenkins
-          publishHTML(target: [
-            reportDir: '.',                  // file is at workspace root
-            reportFiles: 'allure-report.html',
-            reportName: 'Allure Report',
-            keepAll: true,
-            allowMissing: true,
-            alwaysLinkToLastBuild: true
-          ])
+          archiveArtifacts artifacts: 'target/allure-report.zip',
+                           fingerprint: false,
+                           allowEmptyArchive: true
         }
       }
     }
