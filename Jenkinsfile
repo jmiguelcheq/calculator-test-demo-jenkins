@@ -80,29 +80,25 @@ pipeline {
 
       post {
         always {
-          // Tests tab
-          junit allowEmptyResults: true,
-                testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
+          junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Generate Allure single-file and store under target/
+          // Generate Allure single-file report
           sh '''
             set +e
-            mkdir -p target
             if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
               PATH_TO_RESULTS="target/allure-results"
               [ -d "$PATH_TO_RESULTS" ] || PATH_TO_RESULTS="$(ls -d **/allure-results | head -n1)"
-              echo "Generating Allure single-file from: $PATH_TO_RESULTS"
+              echo "Generating Allure single-file report from: $PATH_TO_RESULTS"
               allure generate "$PATH_TO_RESULTS" --single-file --clean -o target/allure-single || true
-              cp -f target/allure-single/index.html target/allure-report.html || true
-              (cd target && zip -q -9 allure-report.zip allure-report.html) || true
             else
-              echo "No allure-results found; skipping Allure generation."
+              echo "No allure-results found; skipping report generation."
             fi
           '''
 
-          archiveArtifacts artifacts: 'target/allure-report.zip',
-                           fingerprint: false,
-                           allowEmptyArchive: true
+          archiveArtifacts artifacts: '''
+            target/allure-single/**,
+            **/target/allure-results/**
+          '''.trim(), allowEmptyArchive: true
         }
       }
     }
