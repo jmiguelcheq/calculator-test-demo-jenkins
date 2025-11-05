@@ -36,27 +36,37 @@ pipeline {
 
           if (params.APP_SHA?.trim()) {
             echo "LOCAL mode: cloning ${params.APP_REPO} @ ${params.APP_SHA}"
-            withEnv(["APP_REPO=${params.APP_REPO}", "APP_SHA=${params.APP_SHA}"]) {
-              sh '''
-                set -e
-                rm -rf app && mkdir -p app
-                git clone "https://github.com/$APP_REPO.git" app
-                cd app
-                git fetch --all --tags
-                git checkout "$APP_SHA"
-
-                # Serve static app (adjust path if your site root differs)
-                cd src
-                if ! command -v http-server >/dev/null 2>&1; then npm i -g http-server >/dev/null 2>&1; fi
-                nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
-                echo $! > /tmp/http-server.pid
-
-                # Wait for server
-                for i in $(seq 1 30); do
-                  curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1
-                done
-              '''
-            }
+			withEnv(["APP_REPO=${params.APP_REPO}", "APP_SHA=${params.APP_SHA}"]) {
+			  sh '''
+			    set -e
+			    rm -rf app && mkdir -p app
+			    git clone "https://github.com/$APP_REPO.git" app
+			    cd app
+			    git fetch --all --tags
+			    git checkout "$APP_SHA"
+			
+			    # --- Detect site root (prefer docs/, then dist/, then src/) ---
+			    SITE_ROOT=""
+			    for d in docs dist src; do
+			      if [ -d "$d" ]; then SITE_ROOT="$d"; break; fi
+			    done
+			    if [ -z "$SITE_ROOT" ]; then
+			      echo "❌ Could not find a site root (docs/, dist/, or src/)"; exit 2
+			    fi
+			    echo "✅ Serving from: $SITE_ROOT"
+			    cd "$SITE_ROOT"
+			
+			    # Install http-server if missing and serve on :8080
+			    if ! command -v http-server >/dev/null 2>&1; then npm i -g http-server >/dev/null 2>&1; fi
+			    nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
+			    echo $! > /tmp/http-server.pid
+			
+			    # Wait for server to be ready
+			    for i in $(seq 1 30); do
+			      curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1
+			    done
+			  '''
+			}
             baseUrl = 'http://127.0.0.1:8080'
           } else {
             echo "REMOTE mode: using CALC_URL=${params.CALC_URL}"
