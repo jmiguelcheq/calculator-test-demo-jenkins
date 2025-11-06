@@ -25,7 +25,6 @@ pipeline {
       steps { checkout scm }
     }
 
-    // <-- Run chmod here so your scripts are executable every time.
     stage('CI Permissions') {
       steps {
         sh '''
@@ -94,10 +93,9 @@ pipeline {
       }
       post {
         always {
-          // Publish JUnit so the "Tests" tab works
           junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Optional: install zip (only to silence "zip: not found" logs)
+          // Optional: install zip to quiet logs
           sh '''
 bash -eu -c "
   if ! command -v zip >/dev/null 2>&1; then
@@ -138,11 +136,11 @@ bash -eu -c "
       }
     }
 
-    // ------- Loki publish (STATUS computed in Groovy; run under bash) -------
+    // -------- Loki publish (all jq usage is inside ONE bash block) --------
     stage('Loki: Publish Test Summary') {
       steps {
         script {
-          def statusVal = currentBuild?.currentResult ?: 'SUCCESS' // compute in Groovy
+          def statusVal = currentBuild?.currentResult ?: 'SUCCESS'
           withCredentials([
             string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
             usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
@@ -158,13 +156,13 @@ bash -eu -c "
     fi
   fi
 
-  # Summarize tests (fallback to zeros)
+  # Summarize tests (fallback to zeros with VALID JSON)
   if ! ./ci/summarize_tests.sh > /tmp/test_summary.json 2>/dev/null; then
     echo '{\"total\":0,\"passed\":0,\"failed\":0,\"skipped\":0,\"duration_ms\":0}' > /tmp/test_summary.json
   fi
   cat /tmp/test_summary.json
 
-  # Build labels & extras (JSON)
+  # Build labels & extras (JSON), *after* jq is available
   STREAM_LABELS=$(jq -n --arg job \\"calculator-tests\\" \
                         --arg repo \\"${GIT_URL:-unknown}\\" \
                         --arg branch \\"${BRANCH_NAME:-unknown}\\" \
@@ -192,13 +190,13 @@ bash -eu -c "
       }
       post {
         always {
-          // Optional: push last console lines to Loki for quick triage
           withCredentials([
             string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
             usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
           ]) {
             sh '''
 bash -eu -c "
+  # Best-effort console tail (path may differ by Jenkins setup)
   TAIL='no console tail'
   if [ -f \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" ]; then
     TAIL=\\"$(tail -n 120 \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" || true)\\"
