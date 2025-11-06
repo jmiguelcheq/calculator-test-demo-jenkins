@@ -192,29 +192,44 @@ pipeline {
         }
       }
       post {
-        always {
-          // Push console tail (optional, safe if not found)
-          withCredentials([
-            string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
-            usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
-          ]) {
-            sh '''
-              set -euo
-              TAIL="no console tail"
-              if [ -f "$WORKSPACE/../${JOB_NAME}@tmp/log" ]; then
-                TAIL="$(tail -n 120 "$WORKSPACE/../${JOB_NAME}@tmp/log" || true)"
-              fi
-
-              STREAM_LABELS="{\"job\":\"jenkins-console\",\"repo\":\"${GIT_URL:-unknown}\",\"branch\":\"${BRANCH_NAME:-unknown}\"}"
-              EXTRA_FIELDS="{\"build_url\":\"${BUILD_URL}\"}"
-              LOG_MESSAGE="$TAIL"
-              export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
-
-              ./ci/push_to_loki.sh || true
-            '''
-          }
-        }
-      }
+	    always {
+	      withCredentials([
+	        string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
+	        usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
+	      ]) {
+	        sh '''
+	          set -eu
+	
+	          # Ensure jq (push_to_loki.sh needs it)
+	          if ! command -v jq >/dev/null 2>&1; then
+	            if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true;
+	            elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true;
+	            elif command -v yum     >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true;
+	            fi
+	          fi
+	
+	          # Grab last ~120 lines of the live console, if available
+	          TAIL="no console tail"
+	          if [ -f "$WORKSPACE/../${JOB_NAME}@tmp/log" ]; then
+	            TAIL="$(tail -n 120 "$WORKSPACE/../${JOB_NAME}@tmp/log" || true)"
+	          fi
+	
+	          # Build valid JSON for labels and extras
+  	          STREAM_LABELS=$(jq -n \
+	            --arg job "jenkins-console" \
+	            --arg repo "${GIT_URL:-unknown}" \
+	            --arg branch "${BRANCH_NAME:-unknown}" \
+	            '{job:$job,repo:$repo,branch:$branch}')
+	          EXTRA_FIELDS=$(jq -n --arg url "${BUILD_URL}" '{build_url:$url}')
+	
+	          LOG_MESSAGE="$TAIL"
+	          export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
+	
+	          ./ci/push_to_loki.sh || true
+	        '''
+	      }
+	    }
+	  }
     }
   }
 
