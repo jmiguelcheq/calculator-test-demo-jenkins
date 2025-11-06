@@ -25,7 +25,6 @@ pipeline {
       steps { checkout scm }
     }
 
-    // Make helper scripts executable
     stage('CI Permissions') {
       steps {
         sh '''
@@ -97,7 +96,19 @@ pipeline {
           // JUnit
           junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Allure single-file (for quick viewing) + full report (for summary.json)
+          // Optional: install zip to avoid "zip: not found" noise
+          sh '''
+bash -eu -c '
+  if ! command -v zip >/dev/null 2>&1; then
+    if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y zip >/dev/null 2>&1 || true;
+    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache zip >/dev/null 2>&1 || true;
+    elif command -v yum     >/dev/null 2>&1; then yum install -y zip >/dev/null 2>&1 || true;
+    fi
+  fi
+'
+'''
+
+          // Allure single-file + full report (for widgets/summary.json)
           sh '''
             set +e
             mkdir -p target
@@ -126,7 +137,7 @@ pipeline {
       }
     }
 
-    // NEW: Push compact summary to Grafana Loki
+    // --- Loki publish (run under bash) ---
     stage('Loki: Publish Test Summary') {
       steps {
         withCredentials([
@@ -134,61 +145,63 @@ pipeline {
           usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
         ]) {
           sh '''
-            set -euo pipefail
+bash -eu -c '
+  # Ensure jq & python3 (package-manager agnostic)
+  if ! command -v jq >/dev/null 2>&1; then
+    if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true;
+    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true;
+    elif command -v yum     >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true;
+    fi
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y python3 >/dev/null 2>&1 || true;
+    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache python3 >/dev/null 2>&1 || true;
+    elif command -v yum     >/dev/null 2>&1; then yum install -y python3 >/dev/null 2>&1 || true;
+    fi
+  fi
 
-            # Make sure jq/python3 exist (package-manager agnostic)
-            if ! command -v jq >/dev/null 2>&1; then
-              if command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true; fi
-              if command -v apk >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true; fi
-              if command -v yum >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true; fi
-            fi
-            if ! command -v python3 >/dev/null 2>&1; then
-              if command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y python3 >/dev/null 2>&1 || true; fi
-              if command -v apk >/dev/null 2>&1; then apk add --no-cache python3 >/dev/null 2>&1 || true; fi
-              if command -v yum >/dev/null 2>&1; then yum install -y python3 >/dev/null 2>&1 || true; fi
-            fi
+  ./ci/summarize_tests.sh > /tmp/test_summary.json || echo "{\"total\":0,\"passed\":0,\"failed\":0,\"skipped\":0,\"duration_ms\":0}" > /tmp/test_summary.json
+  cat /tmp/test_summary.json
 
-            ./ci/summarize_tests.sh > /tmp/test_summary.json || echo '{"total":0,"passed":0,"failed":0,"skipped":0,"duration_ms":0}' > /tmp/test_summary.json
-            cat /tmp/test_summary.json
+  STATUS="SUCCESS"
+  if [ "${currentBuild.result:-SUCCESS}" != "SUCCESS" ]; then STATUS="FAILURE"; fi
 
-            STATUS="SUCCESS"
-            if [ "${currentBuild.result:-SUCCESS}" != "SUCCESS" ]; then STATUS="FAILURE"; fi
+  STREAM_LABELS=$(jq -n --arg job "calculator-tests" \
+                        --arg repo "${GIT_URL:-unknown}" \
+                        --arg branch "${BRANCH_NAME:-unknown}" \
+                        --arg build "${BUILD_NUMBER}" \
+                        --arg status "$STATUS" \
+                        "{job:$job,repo:$repo,branch:$branch,build:$build,status:$status}")
 
-            STREAM_LABELS=$(jq -n --arg job "calculator-tests" \
-                                  --arg repo "${GIT_URL:-unknown}" \
-                                  --arg branch "${BRANCH_NAME:-unknown}" \
-                                  --arg build "${BUILD_NUMBER}" \
-                                  --arg status "$STATUS" \
-                                  '{job:$job,repo:$repo,branch:$branch,build:$build,status:$status}')
+  EXTRA_FIELDS=$(jq -c ". + {
+    build_url: env.BUILD_URL,
+    commit: env.GIT_COMMIT,
+    node: env.NODE_NAME
+  }" /tmp/test_summary.json)
 
-            EXTRA_FIELDS=$(jq -c '. + {
-              build_url: env.BUILD_URL,
-              commit: env.GIT_COMMIT,
-              node: env.NODE_NAME
-            }' /tmp/test_summary.json)
-
-            LOG_MESSAGE="Cucumber/Allure test summary for build ${BUILD_NUMBER}"
-            export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
-            ./ci/push_to_loki.sh
-          '''
+  LOG_MESSAGE="Cucumber/Allure test summary for build ${BUILD_NUMBER}"
+  export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
+  ./ci/push_to_loki.sh
+'
+'''
         }
       }
       post {
         always {
-          // Optional: tail of Jenkins console to Loki
           withCredentials([
             string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
             usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
           ]) {
             sh '''
-              set -euo pipefail
-              TAIL="$(tail -n 120 "$WORKSPACE/../${JOB_NAME}@tmp/log" 2>/dev/null || echo 'no console tail')"
-              LOG_MESSAGE="$TAIL"
-              STREAM_LABELS='{"job":"jenkins-console","repo":"'${GIT_URL:-unknown}'","branch":"'${BRANCH_NAME:-unknown}'"}'
-              EXTRA_FIELDS='{"build_url":"'"${BUILD_URL}"'"}'
-              export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
-              ./ci/push_to_loki.sh || true
-            '''
+bash -eu -c "
+  TAIL=\\"$(tail -n 120 \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" 2>/dev/null || echo no console tail)\\"
+  LOG_MESSAGE=\\"$TAIL\\"
+  STREAM_LABELS=\\"{\\\\\\"job\\\\\\":\\\\\\"jenkins-console\\\\\\",\\\\\\"repo\\\\\\":\\\\\\"${GIT_URL:-unknown}\\\\\\",\\\\\\"branch\\\\\\":\\\\\\"${BRANCH_NAME:-unknown}\\\\\\"}\\"
+  EXTRA_FIELDS=\\"{\\\\\\"build_url\\\\\\":\\\\\\"${BUILD_URL}\\\\\\"}\\"
+  export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
+  ./ci/push_to_loki.sh || true
+"
+'''
           }
         }
       }
