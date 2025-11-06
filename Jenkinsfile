@@ -9,19 +9,15 @@ pipeline {
 
   options { timestamps(); durabilityHint('PERFORMANCE_OPTIMIZED') }
 
-  // ✅ Upstream app job will pass these; defaults make manual runs easy
   parameters {
-    string(name: 'APP_REPO', defaultValue: 'jmiguelcheq/calculator-demo-jenkins',
-           description: 'owner/repo to clone in LOCAL mode (when APP_SHA is set)')
-    string(name: 'APP_SHA',  defaultValue: '',
-           description: 'commit SHA to test locally; leave empty to use CALC_URL (REMOTE mode)')
-    string(name: 'CALC_URL', defaultValue: 'https://jmiguelcheq.github.io/calculator-demo-jenkins',
-           description: 'Public URL to test when APP_SHA is empty')
+    string(name: 'APP_REPO', defaultValue: 'jmiguelcheq/calculator-demo-jenkins', description: 'owner/repo to clone in LOCAL mode (when APP_SHA is set)')
+    string(name: 'APP_SHA',  defaultValue: '', description: 'commit SHA to test locally; leave empty to use CALC_URL (REMOTE mode)')
+    string(name: 'CALC_URL', defaultValue: 'https://jmiguelcheq.github.io/calculator-demo-jenkins', description: 'Public URL to test when APP_SHA is empty')
     booleanParam(name: 'HEADLESS', defaultValue: true, description: 'Run browser headless')
   }
 
   environment {
-    BASE_URL = ''  // resolved in pipeline; persisted via file
+    BASE_URL = ''
   }
 
   stages {
@@ -29,52 +25,53 @@ pipeline {
       steps { checkout scm }
     }
 
+    // Make helper scripts executable
+    stage('CI Permissions') {
+      steps {
+        sh '''
+          set -eu
+          [ -f ci/push_to_loki.sh ] && chmod +x ci/push_to_loki.sh || true
+          [ -f ci/summarize_tests.sh ] && chmod +x ci/summarize_tests.sh || true
+        '''
+      }
+    }
+
     stage('Resolve Test Target') {
       steps {
         script {
           def baseUrl
-
           if (params.APP_SHA?.trim()) {
             echo "LOCAL mode: cloning ${params.APP_REPO} @ ${params.APP_SHA}"
-			withEnv(["APP_REPO=${params.APP_REPO}", "APP_SHA=${params.APP_SHA}"]) {
-			  sh '''
-			    set -e
-			    rm -rf app && mkdir -p app
-			    git clone "https://github.com/$APP_REPO.git" app
-			    cd app
-			    git fetch --all --tags
-			    git checkout "$APP_SHA"
-			
-			    # --- Detect site root (prefer docs/, then dist/, then src/) ---
-			    SITE_ROOT=""
-			    for d in docs dist src; do
-			      if [ -d "$d" ]; then SITE_ROOT="$d"; break; fi
-			    done
-			    if [ -z "$SITE_ROOT" ]; then
-			      echo "❌ Could not find a site root (docs/, dist/, or src/)"; exit 2
-			    fi
-			    echo "✅ Serving from: $SITE_ROOT"
-			    cd "$SITE_ROOT"
-			
-			    # Install http-server if missing and serve on :8080
-			    if ! command -v http-server >/dev/null 2>&1; then npm i -g http-server >/dev/null 2>&1; fi
-			    nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
-			    echo $! > /tmp/http-server.pid
-			
-			    # Wait for server to be ready
-			    for i in $(seq 1 30); do
-			      curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1
-			    done
-			  '''
-			}
+            withEnv(["APP_REPO=${params.APP_REPO}", "APP_SHA=${params.APP_SHA}"]) {
+              sh '''
+                set -e
+                rm -rf app && mkdir -p app
+                git clone "https://github.com/$APP_REPO.git" app
+                cd app
+                git fetch --all --tags
+                git checkout "$APP_SHA"
+
+                SITE_ROOT=""
+                for d in docs dist src; do
+                  if [ -d "$d" ]; then SITE_ROOT="$d"; break; fi
+                done
+                if [ -z "$SITE_ROOT" ]; then echo "❌ No site root (docs/dist/src)"; exit 2; fi
+                echo "✅ Serving from: $SITE_ROOT"
+                cd "$SITE_ROOT"
+
+                if ! command -v http-server >/dev/null 2>&1; then npm i -g http-server >/dev/null 2>&1; fi
+                nohup http-server -p 8080 -c-1 --silent > /tmp/http-server.log 2>&1 &
+                echo $! > /tmp/http-server.pid
+
+                for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080 >/dev/null && break || sleep 1; done
+              '''
+            }
             baseUrl = 'http://127.0.0.1:8080'
           } else {
             echo "REMOTE mode: using CALC_URL=${params.CALC_URL}"
             baseUrl = (params.CALC_URL ?: '').trim()
           }
-
           if (!baseUrl) { error "BASE_URL is empty. Provide CALC_URL or APP_SHA." }
-
           writeFile file: 'BASE_URL.txt', text: baseUrl
           currentBuild.description = "BASE_URL=${baseUrl}"
         }
@@ -86,7 +83,6 @@ pipeline {
         script {
           def base = fileExists('BASE_URL.txt') ? readFile('BASE_URL.txt').trim() : ''
           if (!base) { error 'BASE_URL missing at test stage.' }
-
           withEnv(["BASE_URL=${base}", "HEADLESS=${params.HEADLESS.toString()}"]) {
             sh '''
               set -e
@@ -98,20 +94,24 @@ pipeline {
       }
       post {
         always {
-          // JUnit for "Tests" tab
+          // JUnit
           junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Allure single-file -> zip only (clean Build Artifacts)
+          // Allure single-file (for quick viewing) + full report (for summary.json)
           sh '''
             set +e
             mkdir -p target
             if [ -d target/allure-results ] || ls -d **/allure-results >/dev/null 2>&1; then
               PATH_TO_RESULTS="target/allure-results"
               [ -d "$PATH_TO_RESULTS" ] || PATH_TO_RESULTS="$(ls -d **/allure-results | head -n1)"
-              echo "Generating Allure single-file from: $PATH_TO_RESULTS"
+
+              echo "Generating Allure single-file..."
               allure generate "$PATH_TO_RESULTS" --single-file --clean -o target/allure-single || true
               cp -f target/allure-single/index.html target/allure-report.html || true
               (cd target && zip -q -9 allure-report.zip allure-report.html) || true
+
+              echo "Generating Allure full report (summary.json)…"
+              allure generate "$PATH_TO_RESULTS" -o target/allure-report || true
             else
               echo "No allure-results found; skipping Allure generation."
             fi
@@ -119,8 +119,77 @@ pipeline {
 
           archiveArtifacts artifacts: '''
             target/allure-single/**,
-            **/target/allure-results/**
+            **/target/allure-results/**,
+            target/allure-report/widgets/summary.json
           '''.trim(), allowEmptyArchive: true
+        }
+      }
+    }
+
+    // NEW: Push compact summary to Grafana Loki
+    stage('Loki: Publish Test Summary') {
+      steps {
+        withCredentials([
+          string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
+          usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
+        ]) {
+          sh '''
+            set -euo pipefail
+
+            # Make sure jq/python3 exist (package-manager agnostic)
+            if ! command -v jq >/dev/null 2>&1; then
+              if command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true; fi
+              if command -v apk >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true; fi
+              if command -v yum >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true; fi
+            fi
+            if ! command -v python3 >/dev/null 2>&1; then
+              if command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y python3 >/dev/null 2>&1 || true; fi
+              if command -v apk >/dev/null 2>&1; then apk add --no-cache python3 >/dev/null 2>&1 || true; fi
+              if command -v yum >/dev/null 2>&1; then yum install -y python3 >/dev/null 2>&1 || true; fi
+            fi
+
+            ./ci/summarize_tests.sh > /tmp/test_summary.json || echo '{"total":0,"passed":0,"failed":0,"skipped":0,"duration_ms":0}' > /tmp/test_summary.json
+            cat /tmp/test_summary.json
+
+            STATUS="SUCCESS"
+            if [ "${currentBuild.result:-SUCCESS}" != "SUCCESS" ]; then STATUS="FAILURE"; fi
+
+            STREAM_LABELS=$(jq -n --arg job "calculator-tests" \
+                                  --arg repo "${GIT_URL:-unknown}" \
+                                  --arg branch "${BRANCH_NAME:-unknown}" \
+                                  --arg build "${BUILD_NUMBER}" \
+                                  --arg status "$STATUS" \
+                                  '{job:$job,repo:$repo,branch:$branch,build:$build,status:$status}')
+
+            EXTRA_FIELDS=$(jq -c '. + {
+              build_url: env.BUILD_URL,
+              commit: env.GIT_COMMIT,
+              node: env.NODE_NAME
+            }' /tmp/test_summary.json)
+
+            LOG_MESSAGE="Cucumber/Allure test summary for build ${BUILD_NUMBER}"
+            export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
+            ./ci/push_to_loki.sh
+          '''
+        }
+      }
+      post {
+        always {
+          // Optional: tail of Jenkins console to Loki
+          withCredentials([
+            string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
+            usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
+          ]) {
+            sh '''
+              set -euo pipefail
+              TAIL="$(tail -n 120 "$WORKSPACE/../${JOB_NAME}@tmp/log" 2>/dev/null || echo 'no console tail')"
+              LOG_MESSAGE="$TAIL"
+              STREAM_LABELS='{"job":"jenkins-console","repo":"'${GIT_URL:-unknown}'","branch":"'${BRANCH_NAME:-unknown}'"}'
+              EXTRA_FIELDS='{"build_url":"'"${BUILD_URL}"'"}'
+              export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
+              ./ci/push_to_loki.sh || true
+            '''
+          }
         }
       }
     }
@@ -128,7 +197,6 @@ pipeline {
 
   post {
     always {
-      // Stop local server if started
       sh '''
         if [ -f /tmp/http-server.pid ]; then
           kill "$(cat /tmp/http-server.pid)" 2>/dev/null || true

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Produces a tiny JSON with total, passed, failed, skipped and duration_ms.
+# Looks for either Cucumber JSON under target/ or Allure summary under allure-report/widgets/summary.json
+
+apt-get update -y >/dev/null 2>&1 || true
+apt-get install -y jq >/dev/null 2>&1 || true
+
+if ls target/*.json >/dev/null 2>&1; then
+  # Assume Cucumber JSON (one or many files)
+  jq -s '
+    # concat all features
+    (map(.[]) | .) as $all
+    |
+    {
+      total: ($all | map(.elements) | add | length),
+      passed: ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="passed")) | length),
+      failed: ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="failed")) | length),
+      skipped: ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="skipped")) | length),
+      duration_ms: (
+        ($all | map(.elements) | add | map(.steps) | add | map(.result.duration // 0) | add) / 1000000
+      )
+    }
+  ' target/*.json
+  exit 0
+fi
+
+if [ -f allure-report/widgets/summary.json ]; then
+  jq '{
+    total: (.statistic.total // 0),
+    passed: (.statistic.passed // 0),
+    failed: (.statistic.failed // 0),
+    skipped: (.statistic.skipped // 0),
+    duration_ms: (.time.duration // 0)
+  }' allure-report/widgets/summary.json
+  exit 0
+fi
+
+echo '{"total":0,"passed":0,"failed":0,"skipped":0,"duration_ms":0}'
