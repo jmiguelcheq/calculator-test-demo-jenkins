@@ -23,7 +23,6 @@ pipeline {
       steps { checkout scm }
     }
 
-    // Ensure /ci scripts are executable each run (belt & suspenders)
     stage('CI Permissions') {
       steps {
         sh '''
@@ -101,15 +100,14 @@ pipeline {
 
           // Optional: install zip (to silence "zip: not found")
           sh '''
-bash -eu -c "
-  if ! command -v zip >/dev/null 2>&1; then
-    if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y zip >/dev/null 2>&1 || true;
-    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache zip >/dev/null 2>&1 || true;
-    elif command -v yum     >/dev/null 2>&1; then yum install -y zip >/dev/null 2>&1 || true;
-    fi
-  fi
-"
-'''
+            set -eu
+            if ! command -v zip >/dev/null 2>&1; then
+              if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y zip >/dev/null 2>&1 || true;
+              elif command -v apk     >/dev/null 2>&1; then apk add --no-cache zip >/dev/null 2>&1 || true;
+              elif command -v yum     >/dev/null 2>&1; then yum install -y zip >/dev/null 2>&1 || true;
+              fi
+            fi
+          '''
 
           // Allure single-file + full report (for widgets/summary.json)
           sh '''
@@ -140,7 +138,7 @@ bash -eu -c "
       }
     }
 
-    // -------- Loki publish (ALL jq work inside one bash subshell via heredoc) --------
+    // -------- Loki publish (single sh block; jq installed before use) --------
     stage('Loki: Publish Test Summary') {
       steps {
         script {
@@ -150,45 +148,45 @@ bash -eu -c "
             usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
           ]) {
             withEnv(["STATUS=${statusVal}"]) {
-              sh <<'SHELL'
-bash -eu -o pipefail <<'BASH'
-# ---------- Ensure jq ----------
-if ! command -v jq >/dev/null 2>&1; then
-  if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true;
-  elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true;
-  elif command -v yum     >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true;
-  fi
-fi
+              sh '''
+                set -euo pipefail
 
-# ---------- Create or fallback summary (VALID JSON) ----------
-if ! ./ci/summarize_tests.sh > /tmp/test_summary.json 2>/dev/null; then
-  echo '{"total":0,"passed":0,"failed":0,"skipped":0,"duration_ms":0}' > /tmp/test_summary.json
-fi
-cat /tmp/test_summary.json
+                # Ensure jq
+                if ! command -v jq >/dev/null 2>&1; then
+                  if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true;
+                  elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true;
+                  elif command -v yum     >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true;
+                  fi
+                fi
 
-# ---------- Build labels and extras (AFTER jq is available) ----------
-STREAM_LABELS=$(jq -n \
-  --arg job    "calculator-tests" \
-  --arg repo   "${GIT_URL:-unknown}" \
-  --arg branch "${BRANCH_NAME:-unknown}" \
-  --arg build  "${BUILD_NUMBER}" \
-  --arg status "${STATUS}" \
-  '{job:$job,repo:$repo,branch:$branch,build:$build,status:$status}')
-export STREAM_LABELS
+                # Create or fallback summary (VALID JSON)
+                if ! ./ci/summarize_tests.sh > /tmp/test_summary.json 2>/dev/null; then
+                  echo '{"total":0,"passed":0,"failed":0,"skipped":0,"duration_ms":0}' > /tmp/test_summary.json
+                fi
+                cat /tmp/test_summary.json
 
-EXTRA_FIELDS=$(jq -c '. + {
-  build_url: env.BUILD_URL,
-  commit: env.GIT_COMMIT,
-  node: env.NODE_NAME
-}' /tmp/test_summary.json)
-export EXTRA_FIELDS
+                # Build labels and extras
+                STREAM_LABELS=$(jq -n \
+                  --arg job    "calculator-tests" \
+                  --arg repo   "${GIT_URL:-unknown}" \
+                  --arg branch "${BRANCH_NAME:-unknown}" \
+                  --arg build  "${BUILD_NUMBER}" \
+                  --arg status "${STATUS}" \
+                  '{job:$job,repo:$repo,branch:$branch,build:$build,status:$status}')
+                export STREAM_LABELS
 
-LOG_MESSAGE="Cucumber/Allure test summary for build ${BUILD_NUMBER}"
-export LOG_MESSAGE
+                EXTRA_FIELDS=$(jq -c '. + {
+                  build_url: env.BUILD_URL,
+                  commit: env.GIT_COMMIT,
+                  node: env.NODE_NAME
+                }' /tmp/test_summary.json)
+                export EXTRA_FIELDS
 
-./ci/push_to_loki.sh
-BASH
-SHELL
+                LOG_MESSAGE="Cucumber/Allure test summary for build ${BUILD_NUMBER}"
+                export LOG_MESSAGE
+
+                ./ci/push_to_loki.sh
+              '''
             }
           }
         }
@@ -200,21 +198,20 @@ SHELL
             string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
             usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
           ]) {
-            sh <<'SHELL'
-bash -eu -o pipefail <<'BASH'
-TAIL='no console tail'
-if [ -f "$WORKSPACE/../${JOB_NAME}@tmp/log" ]; then
-  TAIL="$(tail -n 120 "$WORKSPACE/../${JOB_NAME}@tmp/log" || true)"
-fi
+            sh '''
+              set -euo pipefail
+              TAIL="no console tail"
+              if [ -f "$WORKSPACE/../${JOB_NAME}@tmp/log" ]; then
+                TAIL="$(tail -n 120 "$WORKSPACE/../${JOB_NAME}@tmp/log" || true)"
+              fi
 
-STREAM_LABELS="{\"job\":\"jenkins-console\",\"repo\":\"${GIT_URL:-unknown}\",\"branch\":\"${BRANCH_NAME:-unknown}\"}"
-EXTRA_FIELDS="{\"build_url\":\"${BUILD_URL}\"}"
-LOG_MESSAGE="$TAIL"
-export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
+              STREAM_LABELS="{\"job\":\"jenkins-console\",\"repo\":\"${GIT_URL:-unknown}\",\"branch\":\"${BRANCH_NAME:-unknown}\"}"
+              EXTRA_FIELDS="{\"build_url\":\"${BUILD_URL}\"}"
+              LOG_MESSAGE="$TAIL"
+              export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
 
-./ci/push_to_loki.sh || true
-BASH
-SHELL
+              ./ci/push_to_loki.sh || true
+            '''
           }
         }
       }
