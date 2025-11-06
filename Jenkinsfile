@@ -137,83 +137,83 @@ bash -eu -c "
     }
 
     // -------- Loki publish (all jq work inside one bash block) --------
-    stage('Loki: Publish Test Summary') {
-      steps {
-        script {
-          def statusVal = currentBuild?.currentResult ?: 'SUCCESS'
-          withCredentials([
-            string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
-            usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
-          ]) {
-            withEnv(["STATUS=${statusVal}"]) {
-              sh '''
-bash -eu -c "
-  # Ensure jq (apt/alpine/yum)
-  if ! command -v jq >/dev/null 2>&1; then
-    if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true;
-    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq  >/dev/null 2>&1 || true;
-    elif command -v yum     >/dev/null 2>&1; then yum install -y jq      >/dev/null 2>&1 || true;
-    fi
-  fi
-
-  # Summarize tests (fallback JSON must have QUOTED KEYS)
-  if ! ./ci/summarize_tests.sh > /tmp/test_summary.json 2>/dev/null; then
-    echo '{\"total\":0,\"passed\":0,\"failed\":0,\"skipped\":0,\"duration_ms\":0}' > /tmp/test_summary.json
-  fi
-  cat /tmp/test_summary.json
-
-  # Labels & extra fields (built AFTER jq is present)
-  STREAM_LABELS=$(jq -n --arg job \\"calculator-tests\\" \
-                        --arg repo \\"${GIT_URL:-unknown}\\" \
-                        --arg branch \\"${BRANCH_NAME:-unknown}\\" \
-                        --arg build \\"${BUILD_NUMBER}\\" \
-                        --arg status \\"${STATUS}\\" \
-                        '{job:$job,repo:$repo,branch:$branch,build:$build,status:$status}')
-  export STREAM_LABELS
-
-  EXTRA_FIELDS=$(jq -c '. + {
-    build_url: env.BUILD_URL,
-    commit: env.GIT_COMMIT,
-    node: env.NODE_NAME
-  }' /tmp/test_summary.json)
-  export EXTRA_FIELDS
-
-  LOG_MESSAGE=\\"Cucumber/Allure test summary for build ${BUILD_NUMBER}\\"
-  export LOG_MESSAGE
-
-  ./ci/push_to_loki.sh
-"
-'''
-            }
-          }
-        }
-      }
-      post {
-        always {
-          // Optional: push a console tail to Loki (best-effort)
-          withCredentials([
-            string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
-            usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
-          ]) {
-            sh '''
-bash -eu -c "
-  TAIL='no console tail'
-  if [ -f \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" ]; then
-    TAIL=\\"$(tail -n 120 \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" || true)\\"
-  fi
-
-  STREAM_LABELS=\\"{\\\\\\"job\\\\\\":\\\\\\"jenkins-console\\\\\\",\\\\\\"repo\\\\\\":\\\\\\"${GIT_URL:-unknown}\\\\\\",\\\\\\"branch\\\\\\":\\\\\\"${BRANCH_NAME:-unknown}\\\\\\"}\\"
-  EXTRA_FIELDS=\\"{\\\\\\"build_url\\\\\\":\\\\\\"${BUILD_URL}\\\\\\"}\\"
-  LOG_MESSAGE=\\"$TAIL\\"
-  export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
-
-  ./ci/push_to_loki.sh || true
-"
-'''
-          }
-        }
-      }
-    }
+	stage('Loki: Publish Test Summary') {
+	  steps {
+	    script {
+	      def statusVal = currentBuild?.currentResult ?: 'SUCCESS'
+	      withCredentials([
+	        string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
+	        usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
+	      ]) {
+	        withEnv(["STATUS=${statusVal}"]) {
+	          sh '''
+	bash -eu -c "
+	  # ---------- Ensure jq ----------
+	  if ! command -v jq >/dev/null 2>&1; then
+	    if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true;
+	    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true;
+	    elif command -v yum     >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true;
+	    fi
+	  fi
+	
+	  # ---------- Create or fallback summary ----------
+	  if ! ./ci/summarize_tests.sh > /tmp/test_summary.json 2>/dev/null; then
+	    echo '{\\"total\\":0,\\"passed\\":0,\\"failed\\":0,\\"skipped\\":0,\\"duration_ms\\":0}' > /tmp/test_summary.json
+	  fi
+	  cat /tmp/test_summary.json
+	
+	  # ---------- Build labels and extras ----------
+	  STREAM_LABELS=$(jq -n --arg job \\"calculator-tests\\" \
+	                        --arg repo \\"${GIT_URL:-unknown}\\" \
+	                        --arg branch \\"${BRANCH_NAME:-unknown}\\" \
+	                        --arg build \\"${BUILD_NUMBER}\\" \
+	                        --arg status \\"${STATUS}\\" \
+	                        '{job:$job,repo:$repo,branch:$branch,build:$build,status:$status}')
+	  export STREAM_LABELS
+	
+	  EXTRA_FIELDS=$(jq -c '. + {
+	    build_url: env.BUILD_URL,
+	    commit: env.GIT_COMMIT,
+	    node: env.NODE_NAME
+	  }' /tmp/test_summary.json)
+	  export EXTRA_FIELDS
+	
+	  LOG_MESSAGE=\\"Cucumber/Allure test summary for build ${BUILD_NUMBER}\\"
+	  export LOG_MESSAGE
+	
+	  ./ci/push_to_loki.sh
+	"
+	'''
+	        }
+	      }
+	    }
+	  }
+	  post {
+	    always {
+	      // Push console tail (optional, safe if not found)
+	      withCredentials([
+	        string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
+	        usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
+	      ]) {
+	        sh '''
+	bash -eu -c "
+	  TAIL='no console tail'
+	  if [ -f \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" ]; then
+	    TAIL=\\"$(tail -n 120 \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" || true)\\"
+	  fi
+	
+	  STREAM_LABELS=\\"{\\\\\\"job\\\\\\":\\\\\\"jenkins-console\\\\\\",\\\\\\"repo\\\\\\":\\\\\\"${GIT_URL:-unknown}\\\\\\",\\\\\\"branch\\\\\\":\\\\\\"${BRANCH_NAME:-unknown}\\\\\\"}\\"
+	  EXTRA_FIELDS=\\"{\\\\\\"build_url\\\\\\":\\\\\\"${BUILD_URL}\\\\\\"}\\"
+	  LOG_MESSAGE=\\"$TAIL\\"
+	  export STREAM_LABELS EXTRA_FIELDS LOG_MESSAGE
+	
+	  ./ci/push_to_loki.sh || true
+	"
+	'''
+	      }
+	    }
+	  }
+	}
   }
 
   post {
