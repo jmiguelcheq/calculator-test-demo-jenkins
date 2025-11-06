@@ -149,7 +149,7 @@ pipeline {
           ]) {
             withEnv(["STATUS=${statusVal}"]) {
               sh '''
-                set -euo pipefail
+                set -euo
 
                 # Ensure jq
                 if ! command -v jq >/dev/null 2>&1; then
@@ -199,7 +199,7 @@ pipeline {
             usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
           ]) {
             sh '''
-              set -euo pipefail
+              set -euo
               TAIL="no console tail"
               if [ -f "$WORKSPACE/../${JOB_NAME}@tmp/log" ]; then
                 TAIL="$(tail -n 120 "$WORKSPACE/../${JOB_NAME}@tmp/log" || true)"
