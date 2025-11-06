@@ -1,24 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Produces a minimal JSON with total, passed, failed, skipped, and duration_ms.
-# Looks for either Cucumber JSON under target/ or Allure summary under allure-report/widgets/summary.json.
+# Requires jq (Jenkinsfile installs it before calling this script)
 
-# --- Verify jq presence (fail early if missing) ---
-if ! command -v jq >/dev/null 2>&1; then
-  echo "❌ jq not found. Please ensure it's installed in Jenkinsfile before running this script."
-  exit 1
-fi
-
-# --- Case 1: Cucumber JSON reports ---
+# 1) Prefer Cucumber JSON if you produce it
 if ls target/*.json >/dev/null 2>&1; then
   jq -s '
     (map(.[]) | .) as $all
     |
     {
-      total: ($all | map(.elements) | add | length),
-      passed: ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="passed")) | length),
-      failed: ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="failed")) | length),
+      total:   ($all | map(.elements) | add | length),
+      passed:  ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="passed"))  | length),
+      failed:  ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="failed"))  | length),
       skipped: ($all | map(.elements) | add | map(.steps) | add | map(select(.result.status=="skipped")) | length),
       duration_ms: (
         ($all | map(.elements) | add | map(.steps) | add | map(.result.duration // 0) | add) / 1000000
@@ -28,7 +21,18 @@ if ls target/*.json >/dev/null 2>&1; then
   exit 0
 fi
 
-# --- Case 2: Allure summary JSON ---
+# 2) Allure summary: try common locations
+if [ -f target/allure-report/widgets/summary.json ]; then
+  jq '{
+    total: (.statistic.total // 0),
+    passed: (.statistic.passed // 0),
+    failed: (.statistic.failed // 0),
+    skipped: (.statistic.skipped // 0),
+    duration_ms: (.time.duration // 0)
+  }' target/allure-report/widgets/summary.json
+  exit 0
+fi
+
 if [ -f allure-report/widgets/summary.json ]; then
   jq '{
     total: (.statistic.total // 0),
@@ -40,5 +44,18 @@ if [ -f allure-report/widgets/summary.json ]; then
   exit 0
 fi
 
-# --- Default empty JSON (no reports found) ---
+# 3) Last resort: search anywhere for widgets/summary.json (first match)
+FOUND="$(find . -type f -path '*/widgets/summary.json' | head -n1 || true)"
+if [ -n "${FOUND:-}" ] && [ -f "$FOUND" ]; then
+  jq '{
+    total: (.statistic.total // 0),
+    passed: (.statistic.passed // 0),
+    failed: (.statistic.failed // 0),
+    skipped: (.statistic.skipped // 0),
+    duration_ms: (.time.duration // 0)
+  }' "$FOUND"
+  exit 0
+fi
+
+# 4) Fallback: nothing found
 echo '{"total":0,"passed":0,"failed":0,"skipped":0,"duration_ms":0}'
