@@ -16,15 +16,14 @@ pipeline {
     booleanParam(name: 'HEADLESS', defaultValue: true, description: 'Run browser headless')
   }
 
-  environment {
-    BASE_URL = ''
-  }
+  environment { BASE_URL = '' }
 
   stages {
     stage('Checkout (Testing repo)') {
       steps { checkout scm }
     }
 
+    // Ensure /ci scripts are executable each run (belt & suspenders)
     stage('CI Permissions') {
       steps {
         sh '''
@@ -93,9 +92,10 @@ pipeline {
       }
       post {
         always {
+          // Publish JUnit to Jenkins “Tests” tab
           junit allowEmptyResults: true, testResults: '*/target/surefire-reports/*.xml, target/surefire-reports/*.xml'
 
-          // Optional: install zip to quiet logs
+          // Optional: install zip (to silence "zip: not found")
           sh '''
 bash -eu -c "
   if ! command -v zip >/dev/null 2>&1; then
@@ -136,7 +136,7 @@ bash -eu -c "
       }
     }
 
-    // -------- Loki publish (all jq usage is inside ONE bash block) --------
+    // -------- Loki publish (all jq work inside one bash block) --------
     stage('Loki: Publish Test Summary') {
       steps {
         script {
@@ -148,21 +148,21 @@ bash -eu -c "
             withEnv(["STATUS=${statusVal}"]) {
               sh '''
 bash -eu -c "
-  # Ensure jq
+  # Ensure jq (apt/alpine/yum)
   if ! command -v jq >/dev/null 2>&1; then
     if   command -v apt-get >/dev/null 2>&1; then apt-get update -y && apt-get install -y jq >/dev/null 2>&1 || true;
-    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq >/dev/null 2>&1 || true;
-    elif command -v yum     >/dev/null 2>&1; then yum install -y jq >/dev/null 2>&1 || true;
+    elif command -v apk     >/dev/null 2>&1; then apk add --no-cache jq  >/dev/null 2>&1 || true;
+    elif command -v yum     >/dev/null 2>&1; then yum install -y jq      >/dev/null 2>&1 || true;
     fi
   fi
 
-  # Summarize tests (fallback to zeros with VALID JSON)
+  # Summarize tests (fallback JSON must have QUOTED KEYS)
   if ! ./ci/summarize_tests.sh > /tmp/test_summary.json 2>/dev/null; then
     echo '{\"total\":0,\"passed\":0,\"failed\":0,\"skipped\":0,\"duration_ms\":0}' > /tmp/test_summary.json
   fi
   cat /tmp/test_summary.json
 
-  # Build labels & extras (JSON), *after* jq is available
+  # Labels & extra fields (built AFTER jq is present)
   STREAM_LABELS=$(jq -n --arg job \\"calculator-tests\\" \
                         --arg repo \\"${GIT_URL:-unknown}\\" \
                         --arg branch \\"${BRANCH_NAME:-unknown}\\" \
@@ -190,13 +190,13 @@ bash -eu -c "
       }
       post {
         always {
+          // Optional: push a console tail to Loki (best-effort)
           withCredentials([
             string(credentialsId: 'grafana-loki-url', variable: 'LOKI_URL'),
             usernamePassword(credentialsId: 'grafana-loki-basic', passwordVariable: 'LOKI_TOKEN', usernameVariable: 'LOKI_USER')
           ]) {
             sh '''
 bash -eu -c "
-  # Best-effort console tail (path may differ by Jenkins setup)
   TAIL='no console tail'
   if [ -f \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" ]; then
     TAIL=\\"$(tail -n 120 \\"$WORKSPACE/../${JOB_NAME}@tmp/log\\" || true)\\"
