@@ -74,7 +74,7 @@ pipeline {
           }
           if (!baseUrl) { error "BASE_URL is empty. Provide CALC_URL or APP_SHA." }
           writeFile file: 'BASE_URL.txt', text: baseUrl
-          currentBuild.description = "BASE_URL=${baseUrl}"
+          // currentBuild.description = "BASE_URL=${baseUrl}"
         }
       }
     }
