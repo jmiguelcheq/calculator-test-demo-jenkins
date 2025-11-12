@@ -16,7 +16,6 @@ public class UnitSteps {
 
 	WebDriver driver;
     private LandingPage landingPage;
-    private double a, b;
     
     public UnitSteps() {
         this.driver = DriverManager.getDriver();
@@ -24,12 +23,9 @@ public class UnitSteps {
     }
 
     @Given("two numbers {double} and {double}")
-    public void nums(double a, double b) {
-        this.a = a;
-        this.b = b;
-        
-    	landingPage.inputNumberOne(String.valueOf(a));
-    	landingPage.inputNumberTwo(String.valueOf(b));
+    public void nums(double firstNumber, double secondNumber) {
+    	landingPage.inputNumberOne(String.valueOf(firstNumber));
+    	landingPage.inputNumberTwo(String.valueOf(secondNumber));
     }
 
     @When("I {word} them")
